@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Website Scraper</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div class="container">
+        <h1>Website Scraper</h1>
+        <form id="scrapeForm" onsubmit="return false;">
+            <div class="form-group">
+                <input type="url" id="urlInput" placeholder="Enter website URL (e.g., https://example.com)" required>
+            </div>
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" id="removeRedirects" />
+                    Remove redirects
+                </label>
+            </div>
+            <button type="submit" id="downloadBtn">
+                <span>Download Website</span>
+                <div class="loader"></div>
+            </button>
+            <div class="error" id="errorMessage"></div>
+            <div class="success" id="successMessage"></div>
+        </form>
+    </div>
+
+    <script>
+        const form = document.getElementById('scrapeForm');
+        const urlInput = document.getElementById('urlInput');
+        const downloadBtn = document.getElementById('downloadBtn');
+        const loader = document.querySelector('.loader');
+        const errorMessage = document.getElementById('errorMessage');
+        const successMessage = document.getElementById('successMessage');
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const url = urlInput.value.trim();
+
+            if (!url) {
+                showError('Please enter a valid URL');
+                return;
+            }
+
+            // Reset messages
+            errorMessage.style.display = 'none';
+            successMessage.style.display = 'none';
+
+            // Show loading state
+            downloadBtn.disabled = true;
+            loader.style.display = 'block';
+            downloadBtn.querySelector('span').textContent = 'Downloading...';
+
+            try {
+                const response = await fetch('/download', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ url, removeRedirects: document.getElementById('removeRedirects').checked })
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.error || 'Failed to download website');
+                }
+
+                const blob = await response.blob();
+                const downloadUrl = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = downloadUrl;
+                a.download = `website_${Date.now()}.zip`;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(downloadUrl);
+                document.body.removeChild(a);
+
+                showSuccess('Website downloaded successfully!');
+            } catch (error) {
+                showError(error.message);
+            } finally {
+                // Reset button state
+                downloadBtn.disabled = false;
+                loader.style.display = 'none';
+                downloadBtn.querySelector('span').textContent = 'Download Website';
+            }
+        });
+
+        function showError(message) {
+            errorMessage.textContent = message;
+            errorMessage.style.display = 'block';
+            successMessage.style.display = 'none';
+        }
+
+        function showSuccess(message) {
+            successMessage.textContent = message;
+            successMessage.style.display = 'block';
+            errorMessage.style.display = 'none';
+        }
+    </script>
+</body>
+
+</html>

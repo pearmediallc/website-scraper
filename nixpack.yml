@@ -1,0 +1,7 @@
+version: "1.0"
+build:
+  base: "python:3.9"  # Base image for Python 3.9
+  commands:
+    - pip install -r requirements.txt  # Install dependencies
+run:
+  command: "python app.py"  # Command to run the Flask application
