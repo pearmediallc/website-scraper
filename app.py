@@ -181,7 +181,7 @@ def is_tracking_script(script_content):
 def remove_external_domains(soup, original_domain, replacement_domains):
     """Replace exact matches of the original domain, skipping subdomains like track.original.com"""
     preserve_cdns = [
-        'fontawesome.com', 'googleapis.com', 'bootstrapcdn.com', 'jquery.com', 'cdnjs.cloudflare.com', 'unpkg.com'
+        'fontawesome.com', 'cdn.tailwindcss.com', 'googleapis.com', 'bootstrapcdn.com', 'jquery.com', 'cdnjs.cloudflare.com', 'unpkg.com'
     ]
 
     # Step 1: Replace external domains (not equal to original_domain) with the original domain
@@ -642,7 +642,7 @@ def download_assets(soup, base_url, save_dir):
     def should_preserve_cdn(url):
         if not url:
             return False
-        preserve_patterns = ['fontawesome.com', 'bootstrap.com', 'bootstrapcdn.com', 'jquery.com']
+        preserve_patterns = ['fontawesome.com', 'bootstrap.com', 'bootstrapcdn.com', 'jquery.com' ,'cdn.tailwindcss.com' ]
         return any(pattern in url.lower() for pattern in preserve_patterns)
 
     # Create asset directories
@@ -677,28 +677,27 @@ def download_assets(soup, base_url, save_dir):
     for script in soup.find_all('script', src=True):
         src = script.get('src')
         if src:
-            # If the URL is relative (starting with '/'), join it with base URL
-            if src.startswith('/'):
+            # Ensure full URL
+            if src.startswith('//'):
+                src = 'https:' + src
+            elif not src.startswith(('http://', 'https://')):
                 src = urljoin(base_url, src)
 
-            # If it's from a CDN we want to preserve, keep the original link
+            # Preserve trusted CDNs
             if should_preserve_cdn(src) or is_trusted_cdn(src):
-                # Ensure it's an absolute URL and preserve
-                if src.startswith('//'):
-                    script['src'] = 'https:' + src  # Ensure it's HTTPS
-                elif not src.startswith(('http://', 'https://')):
-                    script['src'] = urljoin(base_url, src)
+                script['src'] = src  # Leave as-is (absolute CDN path)
                 app.logger.info(f"Preserving CDN JS: {src}")
+                continue
+            
+            # Otherwise, download and replace
+            filename = safe_filename(src)
+            save_path = os.path.join(save_dir, 'js', filename)
+            if download_and_save_asset(src, base_url, save_path, 'js'):
+                script['src'] = f'js/{filename}'  # Local path
+                app.logger.info(f"Downloaded JS locally: {src} -> js/{filename}")
             else:
-                # Otherwise, download locally and update the src
-                filename = safe_filename(src)
-                save_path = os.path.join(save_dir, 'js', filename)
-                if download_and_save_asset(src, base_url, save_path, 'js'):
-                    script['src'] = f'js/{filename}'  # Update to local relative path
-                    app.logger.info(f"Downloaded JS locally: {src} -> js/{filename}")
-                else:
-                    script.decompose()  # Remove the script if HTTPS call is detected
-                    app.logger.info(f"Removed JS with HTTPS calls: {src}")
+                script.decompose()
+                app.logger.info(f"Removed JS with HTTPS calls or failed to download: {src}")
 
     # Download images
     for img in soup.find_all('img'):
@@ -750,6 +749,47 @@ def download_assets(soup, base_url, save_dir):
             if download_and_save_asset(src, base_url, save_path, 'videos'):
                 source['src'] = f'videos/{filename}'  # Update to local relative path
                 app.logger.info(f"Downloaded Video locally: {src} -> videos/{filename}")
+def download_additional_pages(soup, base_url, save_dir, original_domains, replacement_domains):
+    keywords = ['privacy', 'term', 'terms', 'about', 'contact']
+    downloaded_pages = {}
+
+    for a_tag in soup.find_all('a', href=True):
+        href = a_tag['href']
+        if any(kw in href.lower() for kw in keywords):
+            full_url = urljoin(base_url, href)
+            try:
+                response = requests.get(full_url, headers={
+                    'User-Agent': 'Mozilla/5.0'
+                }, timeout=10)
+                if response.status_code == 200:
+                    encoding = detect_encoding(response.content)
+                    sub_soup = BeautifulSoup(response.content.decode(encoding), 'html.parser')
+
+                    # Process the new page just like the main one
+                    remove_tracking_scripts(sub_soup, True, True, False, save_dir, full_url)
+                    download_assets(sub_soup, full_url, save_dir)
+                    sub_soup = download_css_background_images(sub_soup, full_url, save_dir)
+                    
+                    # Replace domains in content
+                    html_content = str(sub_soup)
+                    html_content = replace_text_content(html_content, original_domains, replacement_domains)
+                    
+                    # Determine filename
+                    filename = re.sub(r'[^a-zA-Z0-9]+', '_', href.strip('/')) or 'page'
+                    filename = filename[:30]  # Limit filename length
+                    filename += '.html'
+                    filepath = os.path.join(save_dir, filename)
+
+                    with open(filepath, 'w', encoding='utf-8') as f:
+                        f.write(html_content)
+
+                    a_tag['href'] = filename
+                    downloaded_pages[href] = filename
+                    app.logger.info(f"Downloaded and linked: {full_url} -> {filename}")
+            except Exception as e:
+                app.logger.warning(f"Failed to fetch {full_url}: {str(e)}")
+
+    return soup
                            
 @app.route('/')
 def index():
@@ -825,6 +865,9 @@ def download_website():
         download_assets(soup, url, save_dir)
 
         soup = download_css_background_images(soup, url, save_dir)
+
+        soup = download_additional_pages(soup, url, save_dir, original_domains, replacement_domains)
+
 
         # Step 8: Replace external domains with the original domain
         remove_external_domains(soup, urlparse(url).netloc, [])
