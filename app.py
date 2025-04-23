@@ -750,7 +750,7 @@ def download_assets(soup, base_url, save_dir):
                 source['src'] = f'videos/{filename}'  # Update to local relative path
                 app.logger.info(f"Downloaded Video locally: {src} -> videos/{filename}")
 def download_additional_pages(soup, base_url, save_dir, original_domains, replacement_domains):
-    keywords = ['privacy', 'term', 'terms', 'about', 'contact']
+    keywords = ['privacy', 'term', 'terms', 'about', 'contact', 'service' ,'services']
     downloaded_pages = {}
 
     for a_tag in soup.find_all('a', href=True):
