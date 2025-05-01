@@ -15,7 +15,8 @@
         body {
             font-family: 'Inter', sans-serif;
             line-height: 1.6;
-            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            background: linear-gradient(1
+            35deg, #f5f7fa 0%, #c3cfe2 100%);
             min-height: 100vh;
             padding: 20px;
         }
@@ -250,13 +251,13 @@
                 <div class="input-container">
                     <label for="originalDomain">Original Domains (Optional)</label>
                     <input type="text" id="originalDomain" placeholder="example.com, sub.example.com">
-                    <div class="help-text">💡 Separate multiple domains with commas</div>
+                    <div class="help-text"> Separate multiple domains with commas</div>
                 </div>
                 
                 <div class="input-container">
                     <label for="replacementDomain">Replacement Domains (Optional)</label>
                     <input type="text" id="replacementDomain" placeholder="mydomain.com, sub.mydomain.com">
-                    <div class="help-text">💡 Enter replacement domains in the same order as original domains</div>
+                    <div class="help-text"> Enter replacement domains in the same order as original domains</div>
                 </div>
 
                 <div class="checkbox-container">
@@ -313,6 +314,18 @@
     </div>
 
     <script>
+        // Initialize checkboxes when page loads
+        window.addEventListener('DOMContentLoaded', () => {
+            const removeTracking = document.getElementById('removeTracking');
+            const removeCustomTracking = document.getElementById('removeCustomTracking');
+            const removeRedirects = document.getElementById('removeRedirects');
+            
+            // Set default values (unchecked)
+            removeTracking.checked = false;
+            removeCustomTracking.checked = false;
+            removeRedirects.checked = false;
+        });
+
         const form = document.getElementById('scrapeForm');
         const urlInput = document.getElementById('urlInput');
         const originalDomainInput = document.getElementById('originalDomain');
@@ -336,18 +349,22 @@
 
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
+            
+            // Get form values
             const url = urlInput.value.trim();
             const originalDomain = originalDomainInput.value.trim();
             const replacementDomain = replacementDomainInput.value.trim();
             const removeTracking = document.getElementById('removeTracking').checked;
             const removeCustomTracking = document.getElementById('removeCustomTracking').checked;
+            const removeRedirects = document.getElementById('removeRedirects').checked;
 
+            // Validate URL
             if (!url) {
                 showError('Please enter a valid URL');
                 return;
             }
 
-            // Only validate domains if both fields are filled
+            // Validate domains if provided
             if (originalDomain || replacementDomain) {
                 if (!originalDomain) {
                     showError('Please enter original domains when using domain replacement');
@@ -358,7 +375,6 @@
                     return;
                 }
 
-                // Validate that the number of original and replacement domains match
                 const originalDomains = originalDomain.split(',').map(d => d.trim()).filter(d => d);
                 const replacementDomains = replacementDomain.split(',').map(d => d.trim()).filter(d => d);
 
@@ -388,7 +404,8 @@
                         originalDomain: originalDomain || '',
                         replacementDomain: replacementDomain || '',
                         removeTracking,
-                        removeCustomTracking
+                        removeCustomTracking,
+                        removeRedirects
                     })
                 });
 
