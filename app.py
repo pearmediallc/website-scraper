@@ -283,13 +283,9 @@ def is_tracking_script(script_content):
 def remove_external_domains(soup, original_domain, replacement_domains):
     """Replace exact matches of the original domain, preserving case sensitivity."""
     preserve_cdns = [
-<<<<<<< HEAD
         'fontawesome.com', 'cdn.jsdelivr.net', 'cdn.tailwindcss.com', 'googleapis.com', 
         'bootstrap.css', 'bootstrapcdn.com', 'cdn.cloud', 'jquery.com', 
         'cdnjs.cloudflare.com', 'unpkg.com'
-=======
-        'fontawesome.com', 'cdn.jsdelivr.net', 'cdn.tailwindcss.com', 'googleapis.com', 'bootstrap.css', 'bootstrapcdn.com', 'cdn.cloud' 'jquery.com', 'cdnjs.cloudflare.com', 'unpkg.com'
->>>>>>> 792294308f6f601facca5a095d28989a35bb18d6
     ]
 
     # Step 1: Replace external domains (not equal to original_domain) with the original domain
@@ -737,7 +733,6 @@ def remove_tracking_keywords_from_script(script_content):
     
     return cleaned_script
 
-<<<<<<< HEAD
 # Modify this part of your remove_tracking_scripts function in app.py
 
 def remove_tracking_scripts(soup, remove_tracking=False, remove_custom_tracking=False, remove_redirects=False, save_dir=None, base_url=None):
@@ -749,14 +744,6 @@ def remove_tracking_scripts(soup, remove_tracking=False, remove_custom_tracking=
         return soup
 
     app.logger.info(f"Tracking removal options - Remove tracking: {remove_tracking}, Remove custom tracking: {remove_custom_tracking}, Remove redirects: {remove_redirects}")
-=======
-def remove_tracking_scripts(soup, remove_tracking=False, remove_custom_tracking=False, remove_redirects=False, save_dir=None, base_url=None):
-    """Remove tracking-related code from the HTML script content without removing the whole script tag."""
-
-    # Skip if no tracking removal is requested
-    if not (remove_tracking or remove_custom_tracking or remove_redirects):
-        return
->>>>>>> 792294308f6f601facca5a095d28989a35bb18d6
 
     # List of trusted CDNs
     trusted_cdns = [
@@ -809,25 +796,18 @@ def remove_tracking_scripts(soup, remove_tracking=False, remove_custom_tracking=
 
         # Check if the script has landerlab-* attributes or contains landerlab in content
         if any(attr.startswith('landerlab') for attr in script.attrs):
-<<<<<<< HEAD
             # Only remove if custom tracking removal is enabled (note the changed logic)
-=======
-            # Only remove if custom tracking removal is enabled
->>>>>>> 792294308f6f601facca5a095d28989a35bb18d6
             if remove_custom_tracking:
                 app.logger.info(f"Removing landerlab script: {script}")
                 script.decompose()
             continue
 
-<<<<<<< HEAD
         # Check for custom track.js scripts
         if src and 'track.js' in src and remove_custom_tracking:
             app.logger.info(f"Removing custom track.js script: {src}")
             script.decompose()
             continue
 
-=======
->>>>>>> 792294308f6f601facca5a095d28989a35bb18d6
         if script.string:  # Only process inline scripts, not src-based ones
             original_script_content = script.string
 
@@ -897,10 +877,7 @@ def remove_tracking_scripts(soup, remove_tracking=False, remove_custom_tracking=
         for link in soup.find_all('a', href=True):
             href = link['href']
             if urlparse(href).netloc and urlparse(href).netloc != urlparse(base_url).netloc:
-<<<<<<< HEAD
                 app.logger.info(f"Removing external redirect link: {href}")
-=======
->>>>>>> 792294308f6f601facca5a095d28989a35bb18d6
                 link.decompose()
 
     # Remove script tags that redirect to external sites (if redirects removal is enabled)
@@ -908,15 +885,10 @@ def remove_tracking_scripts(soup, remove_tracking=False, remove_custom_tracking=
         for script in soup.find_all('script'):
             src = script.get('src', '')
             if src and urlparse(src).netloc and urlparse(src).netloc != urlparse(base_url).netloc:
-<<<<<<< HEAD
                 app.logger.info(f"Removing external script: {src}")
                 script.decompose()
                 
     return soup
-=======
-                script.decompose()
-
->>>>>>> 792294308f6f601facca5a095d28989a35bb18d6
 def detect_encoding(content):
     """Detects the correct encoding of a webpage."""
     # First try to detect encoding from the content
@@ -1140,15 +1112,7 @@ def download_assets(soup, base_url, save_dir):
                 source['src'] = f'videos/{filename}'  # Update to local relative path
                 app.logger.info(f"Downloaded Video locally: {src} -> videos/{filename}")
 def download_additional_pages(soup, base_url, save_dir, original_domains, replacement_domains):
-<<<<<<< HEAD
     keywords = ['privacy.html', 'term.html', 'terms.html', 'about.html', 'contact.html' ,'service.html']
-=======
-<<<<<<< HEAD
-    keywords = ['privacy.html', 'term.html', 'terms.html', 'about.html', 'contact.html']
-=======
-    keywords = ['privacy', 'term', 'terms', 'about', 'contact', 'service' ,'services']
->>>>>>> b5436c13a6f0c80fa69035ae6fc16c084154acc9
->>>>>>> 792294308f6f601facca5a095d28989a35bb18d6
     downloaded_pages = {}
 
     for a_tag in soup.find_all('a', href=True):
@@ -1295,11 +1259,7 @@ def download_website():
         if replacement_domains:
             remove_external_domains(soup, urlparse(url).netloc, replacement_domains)
 
-<<<<<<< HEAD
         # Step 11: Full content domain replacement
-=======
-        # Step 10: Full content domain replacement
->>>>>>> 792294308f6f601facca5a095d28989a35bb18d6
         if original_domains and replacement_domains:
             # Replace in full HTML
             html_raw = str(soup)
@@ -1333,7 +1293,6 @@ def download_website():
                             f.write(content)
                     except Exception as e:
                         app.logger.error(f'Error processing CSS file {css_file}: {str(e)}')
-<<<<<<< HEAD
                         
         # Step 12: Inject custom head script if provided (moved here to ensure all removals/replacements are done first)
         if custom_head_script:
@@ -1383,30 +1342,6 @@ def download_website():
                         new_attrs[k] = v
                 script.attrs = new_attrs
         # Save final HTML
-=======
-
-        # Inject tracking script after all content processing
-        tracking_domain = data.get('trackingDomain', 'coverageguide.pro')
-        if tracking_domain:
-            head = soup.find('head')
-            if head:
-                # Remove any existing tracking script
-                for script in head.find_all('script', {'src': f'https://track.{tracking_domain}/track.js'}):
-                    script.decompose()
-                
-                # Create new tracking script tag
-                tracking_script = soup.new_tag('script')
-                
-                # Set attributes in specific order
-                tracking_script.attrs['type'] = 'text/javascript'
-                tracking_script.attrs['src'] = f'https://track.{tracking_domain}/track.js'
-                
-                # Insert just before closing head tag
-                head.insert(len(head.contents), tracking_script)
-                app.logger.info('Injected tracking script with domain: %s', tracking_domain)
-
-        # Step 11: Save final HTML
->>>>>>> 792294308f6f601facca5a095d28989a35bb18d6
         with open(os.path.join(save_dir, 'index.html'), 'w', encoding='utf-8') as f:
             f.write(str(soup.prettify()))
         
