@@ -240,7 +240,7 @@
 <body>
     <div class="container">
         <h1>Website Scraper</h1>
-        <form id="scrapeForm" onsubmit="return false;">
+        <form id="scrapeForm" method="POST" action="/download" onsubmit="return false;">
             <div class="form-group">
                 <div class="input-container">
                     <label for="urlInput">Website URL</label>
@@ -256,27 +256,32 @@
                 <div class="input-container">
                     <label for="replacementDomain">Replacement Domains (Optional)</label>
                     <input type="text" id="replacementDomain" placeholder="mydomain.com, sub.mydomain.com">
-                    <div class="help-text">💡 Enter replacement domains in the same order as original domains</div>
+                    <div class="help-text"> Enter replacement domains in the same order as original domains</div>
+                </div>
+                <div class="input-container">
+                    <label for="customHeadScript">Custom Head Script (Optional)</label>
+                    <textarea id="customHeadScript" name="customHeadScript" style="font-family:monospace;width:100%;min-height:50px;padding-top:2%;">&lt;script type=&quot;text/javascript&quot; src=&quot;https://track.coverageguide.pro/track.js&quot;&gt;&lt;/script&gt;</textarea>
+                    <div class="help-text"> This script will be injected into the &lt;head&gt; of the downloaded page. "coverageguide" will be replaced with your first replacement domain automatically.</div>
                 </div>
 
                 <div class="checkbox-container">
                     <div class="checkbox-group">
-                        <input type="checkbox" id="removeRedirects">
+                        <input type="checkbox" id="removeRedirects" name="removeRedirects">
                         <label for="removeRedirects">Remove Redirects (Optional)</label>
                     </div>
                     <div class="checkbox-help">
                         Removes links and scripts that redirect to external sites.
                     </div>
                     <div class="checkbox-group">
-                        <input type="checkbox" id="removeTracking">
+                        <input type="checkbox" id="removeTracking" name="removeTracking">
                         <label for="removeTracking">Remove Tracking Scripts (Optional)</label>
                     </div>
                     <div class="checkbox-help">
                         Removes: Meta Pixel, Google Analytics, Google Tag Manager, Ringba, and other tracking scripts
                     </div>
                     <div class="checkbox-group">
-                        <input type="checkbox" id="removeCustomTracking">
-                        <label for="removeCustomTracking">Remove Custom Track.js Scripts (Optional)</label>
+                        <input type="checkbox" id="removeCustomTracking" name="removeCustomTracking">
+                        <label for="removeCustomTracking">Do NOT Remove Custom Track.js Scripts (Optional)</label>
                     </div>
                     <div class="checkbox-help">
                         Removes any scripts containing 'track.js' or similar tracking functionality
@@ -334,13 +339,33 @@
             }
         });
 
+        // Automatically update customHeadScript when replacementDomain changes
+        document.getElementById('replacementDomain').addEventListener('input', function() {
+            const scriptInput = document.getElementById('customHeadScript');
+            const defaultScript = '&lt;script type=&quot;text/javascript&quot; src=&quot;https://track.coverageguide.pro/track.js&quot;&gt;&lt;/script&gt;';
+            let scriptValue = scriptInput.value;
+            const replacement = this.value.split(',')[0].trim();
+            if (replacement) {
+                // Replace 'coverageguide' (only the domain part, not .pro) in the encoded string
+                scriptValue = scriptValue.replace(/coverageguide/g, replacement.split('.')[0]);
+                scriptInput.value = scriptValue;
+            } else {
+                // Reset to default if replacement is empty, but only if not already default
+                if (scriptInput.value !== defaultScript) {
+                    scriptInput.value = defaultScript;
+                }
+            }
+        });
+
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
             const url = urlInput.value.trim();
             const originalDomain = originalDomainInput.value.trim();
             const replacementDomain = replacementDomainInput.value.trim();
             const removeTracking = document.getElementById('removeTracking').checked;
-            const removeCustomTracking = document.getElementById('removeCustomTracking').checked;
+            const doNotRemoveTrackJs = document.getElementById('removeCustomTracking').checked;
+            const removeCustomTracking = !doNotRemoveTrackJs; // backend expects removeCustomTracking: True means REMOVE, False means KEEP
+            const removeRedirects = document.getElementById('removeRedirects').checked;
 
             if (!url) {
                 showError('Please enter a valid URL');
@@ -383,12 +408,15 @@
                     headers: {
                         'Content-Type': 'application/json'
                     },
+                    
                     body: JSON.stringify({ 
                         url, 
                         originalDomain: originalDomain || '',
                         replacementDomain: replacementDomain || '',
                         removeTracking,
-                        removeCustomTracking
+                        removeCustomTracking,
+                        removeRedirects,
+                        customHeadScript: document.getElementById('customHeadScript').value
                     })
                 });
 

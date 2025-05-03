@@ -21,6 +21,75 @@ import chardet
 
 app = Flask(__name__)
 app.logger.setLevel('INFO')  # Set the logging level
+
+def render_with_selenium(url, wait_time=10):
+    """Use Selenium to render JavaScript-heavy (Next.js) pages."""
+    options = webdriver.ChromeOptions()
+    options.add_argument('--headless')
+    options.add_argument('--no-sandbox')
+    options.add_argument('--disable-dev-shm-usage')
+    options.add_argument('--window-size=1920,1080')
+    options.add_argument('--disable-gpu')
+    
+    # Add experimental options for better Next.js handling
+    options.add_experimental_option('excludeSwitches', ['enable-automation'])
+    options.add_experimental_option('useAutomationExtension', False)
+
+    try:
+        # Initialize driver
+        driver = webdriver.Chrome(service=ChromeService(ChromeDriverManager().install()), options=options)
+        
+        # Set page load timeout
+        driver.set_page_load_timeout(30)
+        
+        # Navigate to URL
+        driver.get(url)
+        
+        # Wait for page to be fully loaded
+        WebDriverWait(driver, wait_time).until(
+            lambda d: d.execute_script('return document.readyState') == 'complete'
+        )
+        
+        # Wait for Next.js components to load
+        try:
+            # Wait for main content to be visible
+            WebDriverWait(driver, wait_time).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, 'main, div[data-testid], div[data-nextjs]'))
+            )
+            
+            # Wait for any dynamic content to load
+            WebDriverWait(driver, wait_time).until(
+                lambda d: len(d.find_elements(By.CSS_SELECTOR, 'script')) > 0
+            )
+            
+            # Wait for any pending network requests
+            time.sleep(wait_time)  # Let JavaScript finish rendering
+            
+            # Get final page source
+            html = driver.page_source
+            
+            # Check if page is still loading
+            loading_elements = driver.find_elements(By.CSS_SELECTOR, '[role="progressbar"], .loading, .spinner')
+            if loading_elements:
+                time.sleep(wait_time)  # Wait extra time if loading indicators are present
+                html = driver.page_source
+            
+            return html
+            
+        except Exception as e:
+            app.logger.error(f"Error waiting for Next.js content: {str(e)}")
+            # Try to get page source even if some elements didn't load
+            return driver.page_source
+            
+    except Exception as e:
+        app.logger.error(f"Error rendering page with Selenium: {str(e)}")
+        return None
+    finally:
+        try:
+            driver.quit()
+        except:
+            pass
+
 def download_css_background_images(soup, base_url, save_dir):
     """
     Extract and download background images from both internal and external CSS
@@ -164,11 +233,42 @@ def download_css_background_images(soup, base_url, save_dir):
         element['style'] = updated_style
     
     return soup
+
 # Function to remove unnecessary scripts from <script> tags
 def is_tracking_script(script_content):
-    """Checks if the script contains specific tracking or unnecessary backend code."""
-    tracking_keywords = ['clickfunnels', 'fb', 'track', 'funnel', 'cf', 'google-analytics']
-    return any(keyword in script_content.lower() for keyword in tracking_keywords)
+    """
+    Checks if the script contains specific tracking or unnecessary backend code.
+    """
+    # Check for Ringba scripts
+    if 'ringba' in script_content.lower():
+        return True
+    
+    # Check for Google Tag Manager patterns
+    if any(keyword in script_content.lower() for keyword in ['googletagmanager.com', 'gtag', 'gtm']):
+        return True
+    
+    # Check for specific Google Analytics pattern
+    if 'window.dataLayer' in script_content and 'gtag' in script_content:
+        return True
+    
+    # Check for other tracking patterns
+    tracking_patterns = [
+        'analytics',
+        'tracking',
+        'advertising',
+        'marketing',
+        'pixel',
+        'beacon',
+        'collector',
+        'stats',
+        'monitor'
+    ]
+    
+    # Check if script contains any of the tracking patterns
+    if any(pattern in script_content.lower() for pattern in tracking_patterns):
+        return True
+    
+    return False
 
 # def remove_unnecessary_scripts(soup):
 #     """Remove unnecessary <script> tags"""
@@ -178,10 +278,14 @@ def is_tracking_script(script_content):
               # Remove the script if it matches the tracking patterns
 
 # Function to replace external domains with original domain and then replace with replacement domains
+# Replace this function in your app.py file
+
 def remove_external_domains(soup, original_domain, replacement_domains):
-    """Replace exact matches of the original domain, skipping subdomains like track.original.com"""
+    """Replace exact matches of the original domain, preserving case sensitivity."""
     preserve_cdns = [
-        'fontawesome.com', 'cdn.tailwindcss.com', 'googleapis.com', 'bootstrapcdn.com', 'jquery.com', 'cdnjs.cloudflare.com', 'unpkg.com'
+        'fontawesome.com', 'cdn.jsdelivr.net', 'cdn.tailwindcss.com', 'googleapis.com', 
+        'bootstrap.css', 'bootstrapcdn.com', 'cdn.cloud', 'jquery.com', 
+        'cdnjs.cloudflare.com', 'unpkg.com'
     ]
 
     # Step 1: Replace external domains (not equal to original_domain) with the original domain
@@ -192,13 +296,15 @@ def remove_external_domains(soup, original_domain, replacement_domains):
             continue
 
         parsed_url = urlparse(src)
-        domain = parsed_url.netloc.lower()
+        domain = parsed_url.netloc
+        domain_lower = domain.lower()  # Use lowercase only for comparison
 
-        if any(cdn in domain for cdn in preserve_cdns):
+        if any(cdn in domain_lower for cdn in preserve_cdns):
             continue
 
         # Only replace if domain != original and NOT a subdomain of original
-        if domain and domain != original_domain and not domain.endswith(f".{original_domain}"):
+        if domain_lower and domain_lower != original_domain.lower() and not domain_lower.endswith(f".{original_domain.lower()}"):
+            # Keep the original case when replacing
             new_url = src.replace(domain, original_domain)
             tag[attr] = new_url
 
@@ -212,13 +318,25 @@ def remove_external_domains(soup, original_domain, replacement_domains):
                     continue
 
                 parsed_url = urlparse(src)
-                domain = parsed_url.netloc.lower()
+                domain = parsed_url.netloc
+                domain_lower = domain.lower()  # Use lowercase only for comparison
 
                 # Only replace if it's an exact match (no subdomains)
-                if domain == original_domain:
-                    new_url = src.replace(original_domain, replacement_domain)
+                if domain_lower == original_domain.lower():
+                    # Case-sensitive replacement
+                    if domain.isupper():
+                        replacement = replacement_domain.upper()
+                    elif domain.islower():
+                        replacement = replacement_domain.lower()
+                    elif domain[0].isupper():
+                        replacement = replacement_domain.capitalize()
+                    else:
+                        replacement = replacement_domain
+                        
+                    new_url = src.replace(domain, replacement)
                     tag[attr] = new_url
-
+    
+    return soup
 
 def get_file_extension(url, content_type=None):
     """Get file extension from URL or content type"""
@@ -249,7 +367,9 @@ def get_file_extension(url, content_type=None):
     return '.bin'  # Default extension if nothing else works
 
 def safe_filename(url):
-    """Convert URL to a safe filename"""
+    """
+    Convert URL to a safe filename while preserving the original name
+    """
     # Get the last part of the URL (filename)
     filename = os.path.basename(urlparse(url).path)
     if not filename:
@@ -258,13 +378,21 @@ def safe_filename(url):
     # Remove query parameters if present
     filename = filename.split('?')[0]
     
-    # Replace unsafe characters
-    filename = re.sub(r'[^a-zA-Z0-9._-]', '_', filename)
+    # Keep only the filename without path
+    filename = os.path.basename(filename)
     
-    # Ensure the filename isn't empty
+    # Replace unsafe characters while preserving the original name
+    # Only replace characters that are not allowed in Windows filenames
+    unsafe_chars = r'[<>:"/\\|?*]'
+    filename = re.sub(unsafe_chars, '_', filename)
+    
+    # Remove leading/trailing spaces and dots
+    filename = filename.strip().strip('.')
+    
+    # If filename is empty after cleaning, use a default name
     if not filename:
         filename = 'unnamed'
-        
+    
     return filename
 
 def safe_download(url, save_path):
@@ -325,18 +453,66 @@ def replace_domain_in_url(url, original_domains, new_domains, base_url):
     return url
 
 
+# Replace this function in your app.py file
+
 def replace_text_content(text, original_domains, replacement_domains):
+    """
+    Replace not just domains but any text content from original to replacement.
+    This preserves case sensitivity during replacement to maintain exact formatting.
+    """
     if not text:
         return text
     
-    # Process each domain pair
+    # Process each domain/text pair
     for orig_domain, repl_domain in zip(original_domains, replacement_domains):
-        orig_domain = orig_domain.strip().lower()
-        repl_domain = repl_domain.strip().lower()
+        orig_domain = orig_domain.strip()  # Don't convert to lowercase
+        repl_domain = repl_domain.strip()  # Don't convert to lowercase
         
-        # Replace both www and non-www versions
-        text = text.replace(f'www.{orig_domain}', repl_domain)
-        text = text.replace(orig_domain, repl_domain)
+        # Create case-insensitive pattern but use case-sensitive replacement
+        pattern = re.compile(re.escape(orig_domain), re.IGNORECASE)
+        
+        # Custom replacement function to preserve case
+        def match_case(match):
+            matched_text = match.group(0)
+            
+            # If original is all uppercase, make replacement all uppercase
+            if matched_text.isupper():
+                return repl_domain.upper()
+            
+            # If original is all lowercase, make replacement all lowercase
+            elif matched_text.islower():
+                return repl_domain.lower()
+            
+            # If original starts with capital, capitalize replacement
+            elif matched_text[0].isupper():
+                return repl_domain.capitalize()
+            
+            # Otherwise use replacement as is
+            else:
+                return repl_domain
+                
+        # Apply case-preserving replacement
+        text = pattern.sub(match_case, text)
+        
+        # Handle www prefix case-sensitively too
+        www_pattern = re.compile(r'www\.' + re.escape(orig_domain), re.IGNORECASE)
+        
+        def www_match_case(match):
+            matched_text = match.group(0)
+            www_part = matched_text[:4]  # Extract 'www.' part
+            domain_part = matched_text[4:]  # Extract domain part
+            
+            # Apply same case logic to domain part
+            if domain_part.isupper():
+                return www_part + repl_domain.upper()
+            elif domain_part.islower():
+                return www_part + repl_domain.lower()
+            elif domain_part[0].isupper():
+                return www_part + repl_domain.capitalize()
+            else:
+                return www_part + repl_domain
+                
+        text = www_pattern.sub(www_match_case, text)
         
         # Replace encoded versions (for JavaScript/JSON content)
         text = text.replace(f'\\"{orig_domain}\\"', f'\\"{repl_domain}\\"')
@@ -346,7 +522,6 @@ def replace_text_content(text, original_domains, replacement_domains):
         text = text.replace(f'%22{orig_domain}%22', f'%22{repl_domain}%22')
     
     return text
-
 def download_and_save_asset(url, base_url, save_path, asset_type):
     """Download and save an asset, checking for HTTPS calls in JavaScript files"""
     try:
@@ -425,6 +600,315 @@ def contains_https_calls(content):
     
     return any(re.search(pattern, content, re.IGNORECASE) for pattern in patterns)
 
+def remove_tracking_keywords_from_script(script_content):
+    """Remove specific tracking keywords from script content while preserving format."""
+    # List of tracking patterns to detect and remove
+    tracking_patterns = [
+        # Google Analytics patterns
+        r'gtag_report_conversion',
+        r'window.dataLayer = window.dataLayer || \[\]',
+        r'function gtag\(\){dataLayer.push\(arguments\);}',
+        r'gtag\(\'event\', \'conversion\',',
+        r'AW-[0-9]+/[A-Za-z0-9]+',  # Google Analytics conversion ID pattern
+        r'ga\(\'create\',',
+        r'ga\(\'send\',',
+        r'google-analytics',
+        r'UA-[0-9]+-[0-9]+',  # Universal Analytics ID pattern
+        
+        # Facebook tracking patterns
+        r'fbq\(\'track\',',
+        r'fbq\(\'init\',',
+        r'facebook-pixel',
+        r'pixel\.',
+        
+        # Google Tag Manager patterns
+        r'googletagmanager',
+        r'GTM-[A-Z0-9]+',  # GTM ID pattern
+        r'gtm\.',
+        r'dataLayer',
+        
+        # General tracking patterns
+        r'track\(',
+        r'tracking\.',
+        r'pixel\.',
+        r'conversion\.',
+        r'reportConversion',
+        r'collect\(',
+        r'beacon\.',
+        r'monitor\.',
+        
+        # Marketing and analytics patterns
+        r'advertising\.',
+        r'analytics\.',
+        r'marketing\.',
+        r'campaign\.',
+        r'attribution\.',
+        
+        # Specific tracking functions
+        r'function track\(',
+        r'function pixel\(',
+        r'function conversion\(',
+        r'function report\(',
+        r'function collect\(',
+        
+        # Common tracking domains
+        r'google-analytics\.com',
+        r'googletagmanager\.com',
+        r'facebook\.com/tr',
+        r'facebook\.net/tr',
+        r'pixel\.io',
+        r'track\.',
+        
+        # Specific tracking IDs
+        r'AW-[0-9]+',  # Google AdWords conversion ID
+        r'UA-[0-9]+-[0-9]+',  # Universal Analytics ID
+        r'GTM-[A-Z0-9]+',  # Google Tag Manager ID
+        r'FB-[0-9]+',  # Facebook Pixel ID
+        
+        # Ringba patterns
+        r'ringba\.',
+        r'b-js\.ringba\.com',
+        r'CA[0-9a-f]+',  # Ringba campaign ID pattern
+        
+        # Other tracking patterns
+        r'landerlab',
+        r'clickfunnels',
+        r'cf\.js',
+        r'pixel\.',
+        r'conversion\.',
+        r'report\.',
+        r'collect\.',
+        r'monitor\.',
+        r'track\.',
+        r'advertising\.',
+        r'analytics\.',
+        r'marketing\.',
+        r'pixel\.',
+        r'beacon\.',
+        r'collector\.',
+        r'stats\.',
+        r'monitor\.',
+        
+        # Specific tracking function patterns
+        r'function gtag_report_conversion',
+        r'function trackConversion',
+        r'function trackEvent',
+        r'function trackPage',
+        r'function trackClick',
+        r'function trackForm',
+        r'function trackLead',
+        r'function trackSale',
+        r'function trackSignup',
+    ]
+
+    # Split the script into lines to preserve formatting
+    script_lines = script_content.splitlines()
+    cleaned_script_lines = []
+
+    # Track if we're in a tracking block
+    in_tracking_block = False
+    
+    for line in script_lines:
+        # Check if we're entering a tracking block
+        if any(re.search(pattern, line, re.IGNORECASE) for pattern in tracking_patterns):
+            in_tracking_block = True
+            continue
+        
+        # Skip lines while in tracking block
+        if in_tracking_block:
+            # Reset if we find the end of the block
+            if any(x in line.lower() for x in ['return false', '};', ')', '}', ';']) and not any(re.search(pattern, line, re.IGNORECASE) for pattern in tracking_patterns):
+                in_tracking_block = False
+            continue
+        
+        # Add the line if it's not in a tracking block
+        cleaned_script_lines.append(line)
+
+    # Join the cleaned lines back into a single string to preserve the original formatting
+    cleaned_script = "\n".join(cleaned_script_lines)
+    
+    # If the script was completely tracking-related, return an empty string
+    if not cleaned_script.strip():
+        return ""
+    
+    return cleaned_script
+
+# Modify this part of your remove_tracking_scripts function in app.py
+
+def remove_tracking_scripts(soup, remove_tracking=False, remove_custom_tracking=False, remove_redirects=False, save_dir=None, base_url=None):
+    """Remove tracking-related code from the HTML script content without removing the whole script tag."""
+
+    # Skip if no tracking removal is requested - this is the main check to respect user choices
+    if not (remove_tracking or remove_custom_tracking or remove_redirects):
+        app.logger.info("No tracking removal requested - skipping all tracking script operations")
+        return soup
+
+    app.logger.info(f"Tracking removal options - Remove tracking: {remove_tracking}, Remove custom tracking: {remove_custom_tracking}, Remove redirects: {remove_redirects}")
+
+    # List of trusted CDNs
+    trusted_cdns = [
+        'cdnjs.cloudflare.com',
+        'unpkg.com',
+        'jsdelivr.net',
+        'bootstrapcdn.com',
+        'jquery.com',
+        'cdn.jsdelivr.net',
+        'bootstrap.com',
+        'fontawesome.com',
+        'googleapis.com',
+        'microsoft.com',
+        'cloudflare.com',
+        'amazonaws.com',
+        'cloudfront.net'
+    ]
+
+    def is_trusted_cdn(url):
+        """Check if URL is from a trusted CDN."""
+        parsed_url = urlparse(url)
+        domain = parsed_url.netloc.lower()
+        return any(cdn in domain for cdn in trusted_cdns)
+
+    # Remove scripts with tracking keywords in src attributes
+    tracking_keywords = [
+        'ringba',
+        'googletagmanager.com',
+        'gtag',
+        'gtm',
+        'fbq',
+        'track',
+        'pixel',
+        'analytics'
+    ]
+
+    for script in soup.find_all('script'):
+        # Check src attribute for tracking keywords
+        src = script.get('src')
+        if src:
+            # Skip trusted CDNs
+            if is_trusted_cdn(src):
+                continue
+            
+            # Only remove if tracking removal is enabled
+            if remove_tracking and any(keyword in src.lower() for keyword in tracking_keywords):
+                app.logger.info(f"Removing tracking script with src: {src}")
+                script.decompose()
+                continue
+
+        # Check if the script has landerlab-* attributes or contains landerlab in content
+        if any(attr.startswith('landerlab') for attr in script.attrs):
+            # Only remove if custom tracking removal is enabled (note the changed logic)
+            if remove_custom_tracking:
+                app.logger.info(f"Removing landerlab script: {script}")
+                script.decompose()
+            continue
+
+        # Check for custom track.js scripts
+        if src and 'track.js' in src and remove_custom_tracking:
+            app.logger.info(f"Removing custom track.js script: {src}")
+            script.decompose()
+            continue
+
+        if script.string:  # Only process inline scripts, not src-based ones
+            original_script_content = script.string
+
+            # Only modify script content if tracking removal is enabled
+            if remove_tracking:
+                # Remove tracking keywords from the script content
+                cleaned_script_content = remove_tracking_keywords_from_script(original_script_content)
+
+                # Only update the script if any changes were made
+                if cleaned_script_content != original_script_content:
+                    script.string = cleaned_script_content
+
+    # Remove meta tags related to tracking (if tracking removal is enabled)
+    if remove_tracking:
+        for meta in soup.find_all('meta'):
+            # Check meta content for tracking keywords
+            content = meta.get('content', '').lower()
+            if any(keyword in content for keyword in tracking_keywords):
+                app.logger.info(f"Removing tracking meta: {meta}")
+                meta.decompose()
+
+    # Remove noscript tags that might contain tracking pixels (if tracking removal is enabled)
+    if remove_tracking:
+        for noscript in soup.find_all('noscript'):
+            # Check if noscript contains tracking elements
+            noscript_content = str(noscript).lower()
+            
+            # List of tracking keywords to check in noscript content
+            tracking_keywords = [
+                'gtag',
+                'googletagmanager',
+                'gtm',
+                'ringba',
+                'pixel',
+                'meta',
+                'fb',
+                'google tag manager'
+            ]
+            
+            # Check if any tracking keyword is present
+            if any(keyword in noscript_content for keyword in tracking_keywords):
+                app.logger.info(f"Removing tracking noscript: {noscript}")
+                noscript.decompose()
+                continue
+
+            # Check if noscript contains an iframe
+            iframe = noscript.find('iframe')
+            if iframe:
+                # Check iframe src for tracking keywords
+                src = iframe.get('src', '').lower()
+                if any(keyword in src for keyword in tracking_keywords):
+                    app.logger.info(f"Removing tracking iframe: {iframe}")
+                    noscript.decompose()
+                    continue
+
+    # Remove inline tracking scripts from onclick and other event handlers (if tracking removal is enabled)
+    if remove_tracking:
+        for element in soup.find_all(True):
+            for attr in list(element.attrs):
+                if attr.startswith('on'):
+                    value = element[attr].lower()
+                    if any(keyword in value for keyword in tracking_keywords):
+                        del element[attr]
+
+    # Remove links that redirect to external sites (if redirects removal is enabled)
+    if remove_redirects:
+        for link in soup.find_all('a', href=True):
+            href = link['href']
+            if urlparse(href).netloc and urlparse(href).netloc != urlparse(base_url).netloc:
+                app.logger.info(f"Removing external redirect link: {href}")
+                link.decompose()
+
+    # Remove script tags that redirect to external sites (if redirects removal is enabled)
+    if remove_redirects:
+        for script in soup.find_all('script'):
+            src = script.get('src', '')
+            if src and urlparse(src).netloc and urlparse(src).netloc != urlparse(base_url).netloc:
+                app.logger.info(f"Removing external script: {src}")
+                script.decompose()
+                
+    return soup
+def detect_encoding(content):
+    """Detects the correct encoding of a webpage."""
+    # First try to detect encoding from the content
+    detected = chardet.detect(content)
+    encoding = detected.get("encoding", "utf-8")
+    
+    # If confidence is low, try to find encoding in meta tags
+    if detected.get("confidence", 0) < 0.8:
+        soup = BeautifulSoup(content, 'html.parser')
+        meta_charset = soup.find('meta', charset=True)
+        if meta_charset:
+            return meta_charset['charset']
+        
+        # Look for content-type meta tag
+        meta_content_type = soup.find('meta', attrs={'http-equiv': 'Content-Type'})
+        if meta_content_type and 'charset=' in meta_content_type.get('content', ''):
+            return meta_content_type['content'].split('charset=')[-1]
+    
+    return encoding
+
 def download_and_replace_image(img_url, save_dir, base_url):
     """Download image and return local path"""
     try:
@@ -460,129 +944,6 @@ def download_and_replace_image(img_url, save_dir, base_url):
 
 
 
-def remove_tracking_keywords_from_script(script_content):
-    """Remove specific tracking keywords from script content while preserving format."""
-    tracking_keywords = ['fbq', 'track', 'gtag', 'google-analytics', 'pixel', 'https', 'cf', 'reportConversion', 'conversion', 'https://', 'landerlab-pixel']
-
-    # Split the script into lines to preserve formatting
-    script_lines = script_content.splitlines()
-
-    # Remove lines that contain any tracking function or keyword
-    cleaned_script_lines = []
-    for line in script_lines:
-        # Check if the line contains any landerlab attributes
-        if 'landerlab' in line.lower():
-            continue  # Skip this line as it contains a landerlab tracking keyword
-
-        if not any(keyword in line.lower() for keyword in tracking_keywords):
-            cleaned_script_lines.append(line)  # Keep the line if it doesn't have a tracking keyword
-        else:
-            # Remove specific tracking function calls within a line (if found)
-            for keyword in tracking_keywords:
-                line = re.sub(r'\b' + re.escape(keyword) + r'\([^\)]+\)', '', line, flags=re.IGNORECASE)
-            cleaned_script_lines.append(line)
-
-    # Join the cleaned lines back into a single string to preserve the original formatting
-    return "\n".join(cleaned_script_lines)
-
-def remove_tracking_scripts(soup, remove_tracking=True, remove_custom_tracking=True, remove_redirects=False, save_dir=None, base_url=None):
-    """Remove tracking-related code from the HTML script content without removing the whole script tag."""
-
-    if not (remove_tracking or remove_custom_tracking or remove_redirects):
-        return
-
-    # List of trusted CDNs
-    trusted_cdns = [
-        'cdnjs.cloudflare.com',
-        'unpkg.com',
-        'jsdelivr.net',
-        'bootstrapcdn.com',
-        'jquery.com',
-        'bootstrap.com',
-        'fontawesome.com',
-        'googleapis.com',
-        'microsoft.com',
-        'cloudflare.com',
-        'amazonaws.com',
-        'cloudfront.net'
-    ]
-
-    def is_trusted_cdn(url):
-        """Check if URL is from a trusted CDN."""
-        parsed_url = urlparse(url)
-        domain = parsed_url.netloc.lower()
-        return any(cdn in domain for cdn in trusted_cdns)
-
-    # Remove tracking-related keywords from script content (not entire script)
-    for script in soup.find_all('script'):
-        # Check if the script has landerlab-* attributes or contains landerlab in content
-        if any(attr.startswith('landerlab') for attr in script.attrs):
-            app.logger.info(f"Removing landerlab script: {script}")
-            script.decompose()  # Remove the entire script tag
-
-        if script.string:  # Only process inline scripts, not src-based ones
-            original_script_content = script.string
-
-            # Remove tracking keywords from the script content
-            cleaned_script_content = remove_tracking_keywords_from_script(original_script_content)
-
-            # Only update the script if any changes were made
-            if cleaned_script_content != original_script_content:
-                script.string = cleaned_script_content
-
-    # Remove meta tags related to tracking (if necessary)
-    if remove_tracking:
-        for meta in soup.find_all('meta'):
-            if meta.get('name') in ['facebook-domain-verification', 'google-site-verification']:
-                meta.decompose()
-
-    # Remove noscript tags that might contain tracking pixels or landerlab elements
-    for noscript in soup.find_all('noscript'):
-        if 'landerlab' in str(noscript).lower():
-            app.logger.info(f"Removing landerlab noscript: {noscript}")
-            noscript.decompose()  # Remove the noscript tag
-
-    # Remove inline tracking scripts from onclick and other event handlers
-    for element in soup.find_all(True):
-        for attr in list(element.attrs):
-            if attr.startswith('on'):
-                value = element[attr].lower()
-                if 'track' in value or any(tracker in value for tracker in ['gtag', 'ga', 'fbq', 'https']):
-                    del element[attr]
-
-    # Remove links that redirect to external sites (if needed)
-    if remove_redirects:
-        for link in soup.find_all('a', href=True):
-            href = link['href']
-            if urlparse(href).netloc and urlparse(href).netloc != urlparse(base_url).netloc:
-                link.decompose()  # Remove the link if it redirects to an external site
-
-    # Remove script tags that redirect to external sites (if needed)
-    if remove_redirects:
-        for script in soup.find_all('script'):
-            src = script.get('src', '')
-            if src and urlparse(src).netloc and urlparse(src).netloc != urlparse(base_url).netloc:
-                script.decompose()  # Remove the script if it redirects to an external site
-
-def detect_encoding(content):
-    """Detects the correct encoding of a webpage."""
-    # First try to detect encoding from the content
-    detected = chardet.detect(content)
-    encoding = detected.get("encoding", "utf-8")
-    
-    # If confidence is low, try to find encoding in meta tags
-    if detected.get("confidence", 0) < 0.8:
-        soup = BeautifulSoup(content, 'html.parser')
-        meta_charset = soup.find('meta', charset=True)
-        if meta_charset:
-            return meta_charset['charset']
-        
-        # Look for content-type meta tag
-        meta_content_type = soup.find('meta', attrs={'http-equiv': 'Content-Type'})
-        if meta_content_type and 'charset=' in meta_content_type.get('content', ''):
-            return meta_content_type['content'].split('charset=')[-1]
-    
-    return encoding
 def download_and_replace_favicon(favicon_url, save_dir, base_url):
     """Download favicon and return local path"""
     try:
@@ -624,6 +985,7 @@ def download_assets(soup, base_url, save_dir):
         'unpkg.com',
         'jsdelivr.net',
         'fontawesome.com',
+        'cdn.jsdelivr.net',
         'bootstrapcdn.com',
         'bootstrap.com',
         'jquery.com',
@@ -750,7 +1112,7 @@ def download_assets(soup, base_url, save_dir):
                 source['src'] = f'videos/{filename}'  # Update to local relative path
                 app.logger.info(f"Downloaded Video locally: {src} -> videos/{filename}")
 def download_additional_pages(soup, base_url, save_dir, original_domains, replacement_domains):
-    keywords = ['privacy', 'term', 'terms', 'about', 'contact']
+    keywords = ['privacy.html', 'term.html', 'terms.html', 'about.html', 'contact.html' ,'service.html']
     downloaded_pages = {}
 
     for a_tag in soup.find_all('a', href=True):
@@ -798,7 +1160,7 @@ def index():
 def download_website():
     try:
         data = request.json
-        app.logger.error('Received data: %s', data)
+        app.logger.info('Received data: %s', data)  # Changed to info level
         if not data:
             app.logger.error('Invalid JSON data')
             return jsonify({'error': 'Invalid JSON data'}), 400
@@ -819,8 +1181,12 @@ def download_website():
         remove_tracking = data.get('removeTracking', False)
         remove_custom_tracking = data.get('removeCustomTracking', False)
         remove_redirects = data.get('removeRedirects', False)
-        app.logger.info('Remove tracking: %s, Remove custom tracking: %s, Remove redirects: %s', remove_tracking, remove_custom_tracking, remove_redirects)
+        custom_head_script = data.get('customHeadScript', '').strip()
         
+        # Log the checkbox states
+        app.logger.info('Tracking removal settings - remove_tracking: %s, remove_custom_tracking: %s, remove_redirects: %s', 
+                       remove_tracking, remove_custom_tracking, remove_redirects)
+
         # Validate domains if they are provided
         if original_domains or replacement_domains:
             if not original_domains:
@@ -833,6 +1199,11 @@ def download_website():
                 app.logger.error('Number of original domains must match number of replacement domains')
                 return jsonify({'error': 'Number of original domains must match number of replacement domains'}), 400
             
+            # DON'T convert domains to lowercase to preserve case
+            # original_domains = [d.strip() for d in original_domains]
+            # replacement_domains = [d.strip() for d in replacement_domains]
+            app.logger.info('Original domains (preserving case): %s', original_domains)
+            app.logger.info('Replacement domains (preserving case): %s', replacement_domains)
             # Clean up domain inputs
             original_domains = [d.strip().lower().replace('www.', '') for d in original_domains]
             replacement_domains = [d.strip().lower().replace('www.', '') for d in replacement_domains]
@@ -857,11 +1228,23 @@ def download_website():
         # Step 5: Remove unnecessary scripts
         # remove_unnecessary_scripts(soup)
 
+        # Step 5.5: Always normalize track.js script src by removing query params
+        for script in soup.find_all('script'):
+            src = script.get('src')
+            if src and 'track.js' in src:
+                parsed = urlparse(src)
+                if parsed.path.endswith('track.js') and parsed.query:
+                    new_src = urlunparse((parsed.scheme, parsed.netloc, parsed.path, '', '', ''))
+                    script['src'] = new_src
+
         # Step 6: Remove tracking scripts if requested
         if remove_tracking or remove_custom_tracking or remove_redirects:
+            app.logger.info('Tracking removal requested - Processing tracking scripts')
             remove_tracking_scripts(soup, remove_tracking, remove_custom_tracking, remove_redirects, save_dir, url)
+        else:
+            app.logger.info('No tracking removal requested - Skipping tracking script removal')
 
-        # Step 7: Download all assets locally
+        # Step 8: Download all assets locally
         download_assets(soup, url, save_dir)
 
         soup = download_css_background_images(soup, url, save_dir)
@@ -869,14 +1252,14 @@ def download_website():
         soup = download_additional_pages(soup, url, save_dir, original_domains, replacement_domains)
 
 
-        # Step 8: Replace external domains with the original domain
+        # Step 9: Replace external domains with the original domain
         remove_external_domains(soup, urlparse(url).netloc, [])
 
-        # Step 9: Replace original domain with replacement domains
+        # Step 10: Replace original domain with replacement domains
         if replacement_domains:
             remove_external_domains(soup, urlparse(url).netloc, replacement_domains)
 
-        # ✅ Step 10: Full content domain replacement
+        # Step 11: Full content domain replacement
         if original_domains and replacement_domains:
             # Replace in full HTML
             html_raw = str(soup)
@@ -910,22 +1293,70 @@ def download_website():
                             f.write(content)
                     except Exception as e:
                         app.logger.error(f'Error processing CSS file {css_file}: {str(e)}')
-
-        # Step 11: Save final HTML
+                        
+        # Step 12: Inject custom head script if provided (moved here to ensure all removals/replacements are done first)
+        if custom_head_script:
+            head = soup.find('head')
+            if head:
+                custom_head_script_strip = custom_head_script.strip()
+                if custom_head_script_strip.startswith('<script') or custom_head_script_strip.startswith('<'):
+                    temp_soup = BeautifulSoup(custom_head_script_strip, 'html.parser')
+                    for tag in temp_soup.contents:
+                        # If it's a <script> tag, reorder attributes
+                        if tag.name == 'script':
+                            attrs = tag.attrs
+                            # Rebuild attrs with type first, then src, then the rest
+                            new_attrs = {}
+                            if 'src' in attrs:
+                                new_attrs['src'] = attrs['src']
+                            if 'type' in attrs:
+                                new_attrs['type'] = attrs['type']
+                            
+                            for k, v in attrs.items():
+                                if k not in new_attrs:
+                                    new_attrs[k] = v
+                            tag.attrs = new_attrs
+                        head.append(tag)
+                    app.logger.info('Injected custom head HTML: %s', custom_head_script)
+                else:
+                    new_script = soup.new_tag('script')
+                    # Set type first, then src if present in the code (not typical for inline, but for consistency)
+                    new_script['type'] = 'text/javascript'
+                    new_script.string = custom_head_script_strip
+                    head.append(new_script)
+                    app.logger.info('Injected custom head JS as <script>: %s', custom_head_script)
+        # Step 13: Ensure <script> tags in <head> have type first, then src, then rest
+        from collections import OrderedDict
+        head = soup.find('head')
+        if head:
+            for script in head.find_all('script'):
+                attrs = script.attrs
+                new_attrs = OrderedDict()
+                if 'src' in attrs:
+                    new_attrs['src'] = attrs['src']
+                if 'type' in attrs:
+                    new_attrs['type'] = attrs['type']
+                
+                for k, v in attrs.items():
+                    if k not in new_attrs:
+                        new_attrs[k] = v
+                script.attrs = new_attrs
+        # Save final HTML
         with open(os.path.join(save_dir, 'index.html'), 'w', encoding='utf-8') as f:
             f.write(str(soup.prettify()))
         
-        # Step 12: Create zip file
+
+        # Step 13: Create zip file
         zip_name = f'website_{int(time.time())}.zip'
         shutil.make_archive(os.path.splitext(zip_name)[0], 'zip', save_dir)
 
-        # Step 13: Clean up temp directory
+        # Step 14: Clean up temp directory
         try:
             shutil.rmtree(save_dir)
         except Exception as e:
             app.logger.error('Error cleaning up temporary directory: %s', str(e))
         
-        # Step 14: Send the zip
+        # Step 15: Send the zip
         if os.path.exists(zip_name):
             response = send_file(zip_name, as_attachment=True, mimetype='application/zip')
             try:
