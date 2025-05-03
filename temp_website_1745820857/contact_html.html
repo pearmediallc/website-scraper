@@ -1,0 +1,188 @@
+
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Contact Us</title>
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&amp;display=swap" rel="stylesheet"/>
+<style>
+        :root {
+            --primary-color: #2c3e50;
+            --secondary-color: #3498db;
+            --background-color: #f4f7f6;
+            --text-color: #333;
+            --white: #ffffff;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Roboto', sans-serif;
+            line-height: 1.6;
+            color: var(--text-color);
+            background-color: var(--background-color);
+        }
+
+        .container {
+            width: 90%;
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 2rem 1rem;
+        }
+
+        .header {
+            background-color: var(--primary-color);
+            color: var(--white);
+            text-align: center;
+            padding: 2rem 0;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+        }
+
+        .main-content {
+            background-color: var(--white);
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            border-radius: 8px;
+            padding: 2rem;
+            margin-top: -50px;
+        }
+
+        .contact-form {
+            background-color: var(--background-color);
+            padding: 2rem;
+            border-radius: 8px;
+            margin-bottom: 1.5rem;
+        }
+
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+        }
+
+        .form-group input, 
+        .form-group textarea {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            transition: border-color 0.3s ease;
+        }
+
+        .form-group input:focus, 
+        .form-group textarea:focus {
+            outline: none;
+            border-color: var(--secondary-color);
+        }
+
+        .submit-btn {
+            background-color: var(--secondary-color);
+            color: var(--white);
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background-color 0.3s ease;
+        }
+
+        .submit-btn:hover {
+            background-color: #2980b9;
+        }
+
+        .contact-info {
+            background-color: var(--background-color);
+            padding: 1.5rem;
+            border-radius: 8px;
+        }
+
+        .contact-info h2 {
+            margin-bottom: 1rem;
+            color: var(--primary-color);
+        }
+
+        .contact-info ul {
+            list-style-type: none;
+        }
+
+        .footer {
+            text-align: center;
+            padding: 1rem;
+            background-color: var(--primary-color);
+            color: var(--white);
+            margin-top: 2rem;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                width: 95%;
+                padding: 1rem 0.5rem;
+            }
+
+            .header h1 {
+                font-size: 2rem;
+            }
+        }
+    </style>
+</head>
+<body>
+<header class="header">
+<div class="container">
+<h1>Contact</h1>
+</div>
+</header>
+<div class="container">
+<main class="main-content">
+<section class="contact-form">
+<h2>Get in Touch</h2>
+<p>We're here to help! If you have any questions, concerns, or feedback, please fill out the form below.</p>
+<form action="#" method="post">
+<div class="form-group">
+<label for="name">Full Name</label>
+<input id="name" name="name" required="" type="text"/>
+</div>
+<div class="form-group">
+<label for="email">Email Address</label>
+<input id="email" name="email" required="" type="email"/>
+</div>
+<div class="form-group">
+<label for="phone">Phone Number (Optional)</label>
+<input id="phone" name="phone" type="tel"/>
+</div>
+<div class="form-group">
+<label for="message">Your Message</label>
+<textarea id="message" name="message" required="" rows="5"></textarea>
+</div>
+<button class="submit-btn" type="submit">Send Message</button>
+</form>
+</section>
+<section class="contact-info">
+<h2>Additional Contact Information</h2>
+<ul>
+<li>Email: support@autoguardcoverage.xyz
+</li>
+<li>Business Hours: Monday - Friday, 9 AM - 5 PM EST</li>
+</ul>
+</section>
+</main>
+</div>
+<footer class="footer">
+<p>© 2024 
+autoguardcoverage.xyz
+. All rights reserved.</p>
+</footer>
+</body>
+</html>

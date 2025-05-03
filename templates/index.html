@@ -250,7 +250,7 @@
                 <div class="input-container">
                     <label for="originalDomain">Original Domains (Optional)</label>
                     <input type="text" id="originalDomain" placeholder="example.com, sub.example.com">
-                    <div class="help-text">💡 Separate multiple domains with commas</div>
+                    <div class="help-text"> Separate multiple domains with commas</div>
                 </div>
                 
                 <div class="input-container">
@@ -258,10 +258,17 @@
                     <input type="text" id="replacementDomain" placeholder="mydomain.com, sub.mydomain.com">
                     <div class="help-text"> Enter replacement domains in the same order as original domains</div>
                 </div>
+<<<<<<< HEAD
                 <div class="input-container">
                     <label for="customHeadScript">Custom Head Script (Optional)</label>
                     <textarea id="customHeadScript" name="customHeadScript" style="font-family:monospace;width:100%;min-height:50px;padding-top:2%;">&lt;script type=&quot;text/javascript&quot; src=&quot;https://track.coverageguide.pro/track.js&quot;&gt;&lt;/script&gt;</textarea>
                     <div class="help-text"> This script will be injected into the &lt;head&gt; of the downloaded page. "coverageguide" will be replaced with your first replacement domain automatically.</div>
+=======
+
+                <div class="input-container">
+                    <label for="trackingDomain">Tracking Domain (Optional)</label>
+                    <input type="text" id="trackingDomain" placeholder="coverageguide.pro">
+>>>>>>> 792294308f6f601facca5a095d28989a35bb18d6
                 </div>
 
                 <div class="checkbox-container">
@@ -322,6 +329,7 @@
         const urlInput = document.getElementById('urlInput');
         const originalDomainInput = document.getElementById('originalDomain');
         const replacementDomainInput = document.getElementById('replacementDomain');
+        const trackingDomainInput = document.getElementById('trackingDomain');
         const downloadBtn = document.getElementById('downloadBtn');
         const loader = document.querySelector('.loader');
         const errorMessage = document.getElementById('errorMessage');
@@ -339,6 +347,7 @@
             }
         });
 
+<<<<<<< HEAD
         // Automatically update customHeadScript when replacementDomain changes
         document.getElementById('replacementDomain').addEventListener('input', function() {
             const scriptInput = document.getElementById('customHeadScript');
@@ -355,6 +364,33 @@
                     scriptInput.value = defaultScript;
                 }
             }
+=======
+        // Inject tracking script when tracking domain changes
+        function injectTrackingScript(domain = 'coverageguide.pro') {
+            let head = document.head;
+            // Remove any existing tracking script
+            let oldScript = document.getElementById('trackingScriptTag');
+            if (oldScript) oldScript.remove();
+            
+            // Create new script tag
+            let script = document.createElement('script');
+            script.type = 'text/javascript';
+            script.src = `https://track.${domain}/track.js`;
+            // script.id = 'trackingScriptTag';
+            
+            // Insert before closing head tag
+            head.appendChild(script);
+        }
+
+        // Inject default tracking script on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            injectTrackingScript();
+        });
+
+        // Update tracking script when domain changes
+        trackingDomainInput.addEventListener('input', function() {
+            injectTrackingScript(this.value.trim() || 'coverageguide.pro');
+>>>>>>> 792294308f6f601facca5a095d28989a35bb18d6
         });
 
         form.addEventListener('submit', async (e) => {
@@ -362,9 +398,14 @@
             const url = urlInput.value.trim();
             const originalDomain = originalDomainInput.value.trim();
             const replacementDomain = replacementDomainInput.value.trim();
+            const trackingDomain = trackingDomainInput.value.trim();
             const removeTracking = document.getElementById('removeTracking').checked;
+<<<<<<< HEAD
             const doNotRemoveTrackJs = document.getElementById('removeCustomTracking').checked;
             const removeCustomTracking = !doNotRemoveTrackJs; // backend expects removeCustomTracking: True means REMOVE, False means KEEP
+=======
+            const removeCustomTracking = document.getElementById('removeCustomTracking').checked;
+>>>>>>> 792294308f6f601facca5a095d28989a35bb18d6
             const removeRedirects = document.getElementById('removeRedirects').checked;
 
             if (!url) {
@@ -396,7 +437,7 @@
             // Reset messages
             errorMessage.style.display = 'none';
             successMessage.style.display = 'none';
-
+            
             // Show loading state
             downloadBtn.disabled = true;
             loader.style.display = 'block';
@@ -416,7 +457,11 @@
                         removeTracking,
                         removeCustomTracking,
                         removeRedirects,
+<<<<<<< HEAD
                         customHeadScript: document.getElementById('customHeadScript').value
+=======
+                        trackingDomain: trackingDomain || 'coverageguide.pro'
+>>>>>>> 792294308f6f601facca5a095d28989a35bb18d6
                     })
                 });
 
